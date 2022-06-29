@@ -29,6 +29,9 @@
 *      containing it.
 */
 
+#include<fstream>
+#include<string>
+
 #include "Common.h"
 #include "Scene.h"
 #include "RectsBinPack.h"
@@ -1738,6 +1741,10 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 	faceTexcoords.Resize(faces.GetSize()*3);
 	#ifdef TEXOPT_USE_OPENMP
 	const unsigned numPatches(texturePatches.GetSize()-1);
+
+	std::ofstream ofs;
+	ofs.open("data_image_point.txt", std::ios::out);
+
 	#pragma omp parallel for schedule(dynamic)
 	for (int_t idx=0; idx<(int_t)numPatches; ++idx) {
 		TexturePatch& texturePatch = texturePatches[(uint32_t)idx];
@@ -1748,6 +1755,7 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 		const Image& imageData = images[texturePatch.label];
 		// project vertices and compute bounding-box
 		AABB2f aabb(true);
+		ofs <<(imageData.name) + "\n";
 		FOREACHPTR(pIdxFace, texturePatch.faces) {
 			const FIndex idxFace(*pIdxFace);
 			const Face& face = faces[idxFace];
@@ -1756,6 +1764,8 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 				texcoords[i] = imageData.camera.ProjectPointP(vertices[face[i]]);
 				ASSERT(imageData.image.isInsideWithBorder(texcoords[i], border));
 				aabb.InsertFull(texcoords[i]);
+				ofs << std::to_string(texcoords[i].x)+","+std::to_string(texcoords[i].y)+"\t"+std::to_string(vertices[face[i]].x) + ","
+					+std::to_string(vertices[face[i]].y) + "," +std::to_string(vertices[face[i]].z)+"\n";
 			}
 		}
 		// compute relative texture coordinates
@@ -1775,6 +1785,9 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 				texcoords[v] -= offset;
 		}
 	}
+
+	ofs.close();
+
 	{
 		// init last patch to point to a small uniform color patch
 		TexturePatch& texturePatch = texturePatches.Last();
