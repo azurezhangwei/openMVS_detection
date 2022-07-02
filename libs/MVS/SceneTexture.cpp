@@ -1741,9 +1741,19 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 	faceTexcoords.Resize(faces.GetSize()*3);
 	#ifdef TEXOPT_USE_OPENMP
 	const unsigned numPatches(texturePatches.GetSize()-1);
+	
+	//定义存储标签的容器以及存储点的容器
+	std::map<int_t,std::pair<std::string, int>> data_label;
+	struct Point
+	{
+		float u;
+		float v;
+		float x;
+		float y;
+		float z;
+	};
+	std::map<int_t,std::vector<Point>> data_point;
 
-	std::ofstream ofs;
-	ofs.open("data_image_point.txt", std::ios::out);
 
 	#pragma omp parallel for schedule(dynamic)
 	for (int_t idx=0; idx<(int_t)numPatches; ++idx) {
@@ -1755,7 +1765,16 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 		const Image& imageData = images[texturePatch.label];
 		// project vertices and compute bounding-box
 		AABB2f aabb(true);
-		ofs <<(imageData.name) + "\n";
+		
+		//存储图片的ID，路径，涉及的点数
+		auto ptr_data_label = data_label.find(texturePatch.label);
+		if (ptr_data_label != data_label.end()) {
+			(*ptr_data_label).second.second += texturePatch.faces.size() * 3;
+		}
+		else {
+			data_label[texturePatch.label] = std::pair<std::string, int>(imageData.name, texturePatch.faces.size() * 3);
+		}
+
 		FOREACHPTR(pIdxFace, texturePatch.faces) {
 			const FIndex idxFace(*pIdxFace);
 			const Face& face = faces[idxFace];
@@ -1764,8 +1783,11 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 				texcoords[i] = imageData.camera.ProjectPointP(vertices[face[i]]);
 				ASSERT(imageData.image.isInsideWithBorder(texcoords[i], border));
 				aabb.InsertFull(texcoords[i]);
-				ofs << std::to_string(texcoords[i].x)+","+std::to_string(texcoords[i].y)+"\t"+std::to_string(vertices[face[i]].x) + ","
-					+std::to_string(vertices[face[i]].y) + "," +std::to_string(vertices[face[i]].z)+"\n";
+
+				//存储点的所属图片id，二维点，三维点
+				struct Point temp = { texcoords[i].x,texcoords[i].y,vertices[face[i]].x,vertices[face[i]].y,vertices[face[i]].z };
+				data_point[texturePatch.label].push_back(temp);
+				
 			}
 		}
 		// compute relative texture coordinates
@@ -1786,7 +1808,36 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 		}
 	}
 
-	ofs.close();
+
+	//声明变量，创建txt文件
+	std::ofstream ofs_point, ofs_label;
+	ofs_point.open("data_image_point.txt", std::ios::out);
+	ofs_label.open("data_label.txt", std::ios::out);
+	
+	////输出文件名与face数量
+	//ofs_label << (imageData.name) + "\t" + std::to_string(texturePatch.label) + "\t" + std::to_string(texturePatch.faces.size() * 3) + "\n";
+	//ofs_point << std::to_string(texturePatch.label) + "\t" + std::to_string(texcoords[i].x) + "," + std::to_string(texcoords[i].y) + "\t" + std::to_string(vertices[face[i]].x) + ","
+	//	+ std::to_string(vertices[face[i]].y) + "," + std::to_string(vertices[face[i]].z) + "\n";
+
+	for (auto ptr_data_label = data_label.begin();ptr_data_label != data_label.end();ptr_data_label++) {
+		ofs_label << ptr_data_label->first << "\t" << ptr_data_label->second.first << "\t" << ptr_data_label->second.second << "\n";
+	}
+
+	for (auto ptr_data_point = data_point.begin();ptr_data_point != data_point.end();ptr_data_point++) {
+		for (auto ptr_second = ptr_data_point->second.begin();ptr_second != ptr_data_point->second.end();ptr_second++) {
+			std::string str=std::to_string(ptr_data_point->first)+"\t";
+			str += std::to_string(ptr_second->u) + "\t" + std::to_string(ptr_second->v) + "\t"
+				+ std::to_string(ptr_second->x) + "\t" + std::to_string(ptr_second->y) + "\t" + std::to_string(ptr_second->z) + "\n";
+			ofs_point << str;
+		}
+	}
+
+	ofs_point.close();
+	ofs_label.close();
+	
+	
+	
+
 
 	{
 		// init last patch to point to a small uniform color patch
